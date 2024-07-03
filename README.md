@@ -2,7 +2,8 @@
 
 ## Application of discrete choice modeling to estimate gender effect on the access and the use of Amtrak from Davis, CA
 
-In this collaborative study with Dr. Susie Pike and fellow graduate students at UC Davis (Carolina, Jahan, and Claire), I am in charge for data preparation, data visualization, and discrete choice modeling. 
+In this collaborative study with Dr. Susie Pike and fellow graduate students at UC Davis (Carolina, Jahan, and Claire), I apply Multinomial Logit model to estimate factors affecting access mode choice to Davis Amtrak station and Ordinal Logit model to estimate factors affecting the frequency of riding Amtrak / Capitol Corridor from Davis with a focus on gender effect. 
+I am in charge for data preparation, data visualization, and discrete choice modeling. 
 
 ### Introduction
 
