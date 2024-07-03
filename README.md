@@ -1,4 +1,4 @@
-# Gender and Amtrak study
+# MNL and OLM on Gender and Amtrak study
 
 ## Application of discrete choice modeling to estimate gender effect on the access and the use of Amtrak from Davis, CA
 
