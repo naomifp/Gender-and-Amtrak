@@ -1,0 +1,1030 @@
+---
+title: "Gender & Amtrak"
+subtitle: "Data Preparation"
+author: "Naomi Panjaitan"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged
+subtitle: Preliminary Check
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(gridExtra)
+library(mice)
+```
+
+```{r message=FALSE, warning=FALSE}
+df2019 <- read_csv("Amtrak_user_survey_2019.csv")
+```
+
+
+# Data Cleaning
+
+In this section, I clean all "Other" responses and store them into categories available
+
+
+
+## Gender
+
+I pull the responses in "Other (please specify)" and store them into available categories:
+Male, Female, Non-binary, or Prefer not to say
+
+
+```{r}
+data19 <- df2019 %>%
+# filter(!(freq.visit=="Never")) %>%
+  mutate_if(is.factor, as.character) %>% 
+  mutate(gender = case_when(str_detect(gender.other, "woman") ~ "Female",
+                            str_detect(gender.other, "masculine") ~ "Male",
+                            str_detect(gender.other, 
+                                       c("non|Non|[A-Z]*queer*$|diverse")) ~ "Non-binary",
+                            TRUE ~ gender)) %>%
+  select(!gender.other)
+
+unique(data19$gender)  #checking gender
+
+data19 %>%
+  select(gender) %>%
+  group_by(gender) %>% 
+  summarise(percentage = n()/nrow(data19)*100)
+```
+
+
+## Race
+
+I pull the responses in "Other (please specify)" and store them into binary categories: Caucasian or not
+
+```{r}
+data19 <- data19 %>%
+  mutate(Caucasian = case_when(str_detect(ethnicity.other, "American|European|English|
+                                      White|jewish|Jewish|Lebanese|Russian|Caucasian|
+                                      Ashkenazi|Ashkenazic") ~ "Caucasian",
+                               ethnicity.other == "Middle Eastern" ~ "Caucasian",
+                           TRUE ~ Caucasian))
+```
+
+
+## Visiting Purpose
+
+Purpose of visiting the station
+1. To access train service
+2. To access Unitrans bus service.
+3. To access Amtrak bus connections.
+3. To park car at the station when visiting Downtown Davis.
+4. To enjoy the public spaces at the station.
+5. Other (please specify)
+
+I pull the responses in "Other (please specify)" and store them into other categories available.
+
+```{r}
+data19 <- data19 %>%
+  rename("access.enjoy" = "access.enjoy...11") %>%
+  rename("access.other" = "access.other...12")
+
+unique(data19$access.other)
+```
+
+Many comments about picking up / dropping off other at the station, also watching trains with little kids. Some work around the station, some are passerby, some buying tickets in advance.
+
+```{r}
+# making binary options for every visiting purposes
+data19 <- data19 %>%
+  mutate(access.unitrans = case_when(is.na(access.unitrans) ~ 0, TRUE ~ 1)) %>%
+  mutate(access.amtrakbus = case_when(is.na(access.amtrakbus) ~ 0, TRUE ~ 1)) %>%
+  mutate(access.enjoy = case_when(is.na(access.enjoy) ~ 0, TRUE ~ 1)) %>%
+  mutate(access.train = case_when(str_detect(access.other, "commute|UC Davis|office") ~ 1,
+                                  is.na(access.train) ~ 0, TRUE ~ 1)) %>%
+  mutate(access.park = case_when(str_detect(access.other, "park|parking|Parking") ~ 1,
+                                 is.na(access.park) ~ 0, TRUE ~ 1)) %>%
+  mutate(access.pickdrop = case_when(str_detect(access.other, 
+                                     c("pick|Pick|Drop|drop|depart")) ~ 1, TRUE ~ 0)) %>%
+  mutate(access.watch = case_when(str_detect(access.other, 
+                                             c("watch|kids|see the trains|grandchildren")) ~ 1,
+                                  TRUE ~ 0))
+```
+
+With the new categories, the visit purposes become:
+1. To access train service
+2. To access Unitrans bus service.
+3. To access Amtrak bus connections.
+4. To park car at the station when visiting Downtown Davis.
+5. To enjoy the public spaces at the station.
+6. To pick up or drop off others
+7. To watch the trains
+
+
+## Visiting Time
+
+Visiting Time:
+1. Morning and evening
+2. Morning only
+3. Evening only
+4. During the day
+5. Weekends and/or holidays
+6. Other (please specify)
+
+I pull the responses in "Other (please specify)" and store them into other categories available.
+
+```{r}
+unique(data19$time.other)
+```
+
+```{r}
+data19 <- data19 %>%
+  mutate(time.visit = case_when(time.other == "Sometimes during the day to access CC to get to meetings in Sac or Solano Co." ~ "During the day",
+                                 TRUE ~ time.visit)) %>%
+  mutate(time.visit = case_when(time.other == "primarily evening, but not exclusively" ~ "Evening only",
+                                 TRUE ~ time.visit)) %>%
+  mutate(time.visit = case_when(time.other == "time varies, often during the early evening, but also during the day" ~ "Evening only",
+                                 TRUE ~ time.visit)) %>%
+  mutate(time.visit = case_when(time.other == "To attend Oakland A's games, go to the Bay Area, etc so it depends on what event I'm going to" ~ "Weekends and/or holidays",
+                                 TRUE ~ time.visit)) %>%
+  mutate(time.visit = case_when(time.other == "Generally in the early evening to hang out and otherwise whenever I am on the train, generally daytime" ~ "During the day",
+                                 TRUE ~ time.visit)) %>%
+  mutate(time.visit = case_when(time.other == "During the day and evening, more often on weekends." ~ "Weekends and/or holidays",
+                                 TRUE ~ time.visit)) %>%
+    mutate(time.visit = case_when(time.other == "Morning and evening for train access, during the day and evening for public space access" ~ "Morning and evening",
+                                 TRUE ~ time.visit)) %>%
+  mutate(time.visit = case_when(time.other == "afternoon" ~ "During the day",
+                                 TRUE ~ time.visit)) %>%
+  mutate(time.visit = case_when(time.other == "most frequently when going to Sacramento, which is usually afternoon M-Fri or anytime during a weekend. also when going on trip to Bay Area" ~ "During the day",
+                                 TRUE ~ time.visit)) %>%
+  mutate(time.visit = case_when(time.other == "And for fun trips to SF or Sac" ~ "Weekends and/or holidays",
+                                 TRUE ~ time.visit))
+  
+```
+
+## Visiting Company
+
+Q: Who's typically with you at the Davis Amtrak Station?
+1. I'm always alone.
+2. I travel with a friend, colleague, or family member.
+3. A group of friends or colleagues.
+4. My whole family.
+5. Other (please specify)
+
+I pull the responses in "Other (please specify)" and store them into other categories available.
+
+```{r}
+unique(data19$with.other)
+```
+
+```{r}
+data19 <- data19 %>%
+  mutate(who.with = case_when(with.other == "It varies, usually  with friends but often I'm alone" ~ "I travel with a friend, colleague, or family member.",
+                                 TRUE ~ who.with)) %>%
+  mutate(who.with = case_when(with.other == "I pick up and drop off my wife for a weekly commute to San Fransisco." ~ "I travel with a friend, colleague, or family member.",
+                                 TRUE ~ who.with)) %>%
+  mutate(who.with = case_when(with.other == "Picking up or dropping off folks using the train." ~ "I travel with a friend, colleague, or family member.",
+                                 TRUE ~ who.with)) %>%
+  mutate(who.with = case_when(with.other == "Pick up daughter" ~ "I travel with a friend, colleague, or family member.",
+                                 TRUE ~ who.with)) %>%
+  mutate(who.with = case_when(with.other == "My spouse" ~ "I travel with a friend, colleague, or family member.",
+                                 TRUE ~ who.with)) %>%
+  mutate(who.with = case_when(with.other == "Usually alone" ~ "I'm always alone.",
+                                 TRUE ~ who.with)) %>%
+  mutate(who.with = case_when(with.other == "a family member" ~ "I travel with a friend, colleague, or family member.",
+                                 TRUE ~ who.with)) %>% 
+  mutate(who.with = case_when(with.other == "someone stays with me until the train arrives." ~ "I'm always alone.",
+                                 TRUE ~ who.with)) %>%
+  mutate(who.with = case_when(with.other == "Usually alone, but sometimes I travel or otherwise accompanied by others" ~ "I'm always alone.",
+                                 TRUE ~ who.with)) %>%
+  mutate(who.with = case_when(with.other == "I am often alone, but also travel with family or just pick them up." ~ "I'm always alone.",
+                                 TRUE ~ who.with)) %>%
+  mutate(who.with = case_when(with.other == "I drop my spouse off at train to commute to SF" ~ "I travel with a friend, colleague, or family member.",
+                                 TRUE ~ who.with)) %>%
+  mutate(who.with = case_when(with.other == "alone when commuting weekdays, with friend/family usually on weekends" ~ "I'm always alone.",
+                                 TRUE ~ who.with)) %>%
+  mutate(who.with = case_when(with.other == "I am usually alone, but do sometimes travel with a family member." ~ "I'm always alone.",
+                                 TRUE ~ who.with)) %>%
+  mutate(who.with = case_when(with.other == "commuting alone or using parking with family to go downtown" ~ "I'm always alone.",
+                                 TRUE ~ who.with)) %>%
+  mutate(who.with = case_when(with.other == "family or family & friends" ~ "I travel with a friend, colleague, or family member.",
+                                 TRUE ~ who.with)) %>%
+  mutate(who.with = case_when(with.other == "Always meet fellow-travellers." ~ "I'm always alone.",
+                                 TRUE ~ who.with)) %>%
+  mutate(who.with = case_when(with.other == "Other people I have met on the train who also commute to the Bay Area." ~ "I'm always alone.",
+                                 TRUE ~ who.with)) %>%
+  mutate(who.with = case_when(with.other == "Daughter" ~ "I travel with a friend, colleague, or family member.",
+                                 TRUE ~ who.with)) %>%
+  mutate(who.with = case_when(with.other == "I have made many friends with other regular commuters" ~ "I'm always alone.",
+                                 TRUE ~ who.with))
+```
+
+## Trip Start/End
+
+Q: Where does your trip typically begin/end?
+1. Downtown Davis
+2. UC Davis
+3. Somewhere else in Davis
+4. Somewhere else in Yolo County (Woodland, West Sacramento, etc.)
+5. Solano County (Vallejo, Fairfield, Vacaville, etc.)
+6. Sacramento County (Sacramento, Elk Grove, Rancho Cordova, Citrus Heights, etc.)
+7. Bay Area
+8. Other (please specify)
+
+I pull the responses in "Other (please specify)" and store them into other categories available.
+
+
+### Trip Start
+
+```{r}
+unique(data19$start.other)
+```
+
+```{r}
+data19 <- data19 %>%
+  mutate(tripstart = case_when(start.other == "Live in Davis and take the train to events usually" ~ "Somewhere else in Davis",
+                                 TRUE ~ tripstart)) %>%
+  mutate(tripstart = case_when(start.other == "City of Davis" ~ "Somewhere else in Davis",
+                                 TRUE ~ tripstart)) %>%
+  mutate(tripstart = case_when(start.other == "I live just outside of downtown, so I walk or bike" ~ "Somewhere else in Davis",
+                                 TRUE ~ tripstart)) %>%
+  mutate(tripstart = case_when(start.other == "West Davis (Stonegate)" ~ "Somewhere else in Davis",
+                                 TRUE ~ tripstart)) %>%
+  mutate(tripstart = case_when(str_detect(start.other, 
+                                     c("Placer|placer|Roseville|roseville")) ~ "Placer County",
+                                 TRUE ~ tripstart)) %>%
+  mutate(tripstart = case_when(start.other == "Dixon, CA - Solano County" ~ "Solano County (Vallejo, Fairfield, Vacaville, etc.)",
+                                 TRUE ~ tripstart))
+```
+
+
+### Trip End
+
+```{r}
+unique(data19$end.other)
+```
+
+```{r}
+data19 <- data19 %>%
+  mutate(tripend = case_when(end.other == "south Davis" ~ "Somewhere else in Davis",
+                                 TRUE ~ tripend)) %>%
+  mutate(tripend = case_when(end.other == "95616" ~ "Somewhere else in Davis",
+                                 TRUE ~ tripend)) %>%
+  mutate(tripend = case_when(end.other == "San Jose" ~ "Bay Area",
+                                 TRUE ~ tripend)) %>%
+  mutate(tripend = case_when(end.other == "San Francusco" ~ "Bay Area",
+                                 TRUE ~ tripend)) %>%
+  mutate(tripend = case_when(str_detect(end.other, 
+                                     c("Placer|placer|Roseville|roseville")) ~ "Placer County",
+                                 TRUE ~ tripend)) %>%
+  mutate(tripend = case_when(end.other == "Davis" ~ "Somewhere else in Davis",
+                                 TRUE ~ tripend)) %>%
+  mutate(tripend = case_when(end.other == "San Francisco" ~ "Bay Area",
+                                 TRUE ~ tripend)) %>%
+  mutate(tripend = case_when(end.other == "Too bad one cannot click more than one option:  If I travel on train I go to Bay Area,  When I use parking lot, I go to Downtown Davis" ~ "Bay Area",
+                                 TRUE ~ tripend)) %>%
+  mutate(tripstart = case_when(start.other == "Dixon, CA" ~ "Solano County (Vallejo, Fairfield, Vacaville, etc.)",
+                                 TRUE ~ tripstart))
+```
+
+
+## Access Modes
+
+I pull the responses in "Other (please specify)" and store them into other categories available.
+
+```{r}
+unique(data19$access.mode)
+unique(data19$access.other...24)
+```
+
+```{r}
+data19 <- data19 %>%
+  mutate(access.mode = case_when(access.other...24 == "Jump bike" ~ "I bike",
+                                 access.other...24 == "I drive with others and dropped off other times." ~ "I drive with others",
+                                 access.other...24 == "those I am picking up or dropping off" ~ "I drive with others",
+                                 access.other...24 == "Drive or get dropped off" ~ "I get picked up/dropped off by a friend or family member",
+                                 access.other...24 == "I am picking someone up" ~ "I drive with others",
+                                 access.other...24 == "those I am picking up or dropping off" ~ "I drive with others",
+                                 access.other...24 == "Unitrans or we walk" ~ "I transfer to/from another transit service",
+                                 access.other...24 == "Lyft if I am traveling, motorcycle if I am just hanging out" ~ "I get picked up/dropped off by a taxi/Uber/Lyft",
+                                 access.other...24 == "I walk 15 minutes or is dropped off by cab or family if too much luggage. I wish there were unitrans connection, but there isnt" ~ "I walk",
+                                 access.other...24 == "I take Unitrans" ~ "I transfer to/from another transit service",
+                                 access.other...24 == "Unitrans" ~ "I transfer to/from another transit service",
+                                 access.other...24 == "The Trains" ~ "I transfer to/from another transit service",
+                                 access.other...24 == "Capitol Corridor" ~ "I transfer to/from another transit service",
+                                 access.other...24 == "60% bike; 40% drop-off/pick-up" ~ "I bike",
+                                 access.other...24 == "Depends on time of year and weather. Combination of bike and autos. Never by public transit," ~ "I bike",
+                                 access.other...24 == "I bike, but I don't understand why this isn't a ranked choice, at least with two choices etc." ~ "I bike",
+                                 access.other...24 == "amtrak" ~ "I transfer to/from another transit service",
+                                 TRUE ~ access.mode))
+```
+
+
+
+\newpage
+
+# Binary Coding
+
+In this section, I make binary coding for all variables. They form a new data frame named "data".
+
+
+## Frequency of Riding Train
+
+Here, frequency of riding train is derived from frequency of visiting the station by those who come to the station to access the train. It turns out all who access the train visit at least once a month.
+
+```{r}
+data <- data19 %>%
+  filter(access.train == 1) %>% # those who visit the station to access train
+  filter(!is.na(access.mode)) %>% # those who answer to mode choice question
+  filter(!(access.mode=="Other (please specify)")) %>% 
+  mutate(freq = case_when(freq.visit=="Once a month" ~ 1,
+                          freq.visit=="Once a week" ~ 2,
+                          freq.visit=="2 to 4 days a week" ~ 3,
+                          freq.visit=="5 or more days a week" ~ 4,
+                          TRUE ~ 0)) 
+```
+
+
+## Sociodemographic
+
+```{r}
+data <- data %>%
+  #GENDER
+  mutate(female = case_when(gender == "Female" ~ 1,
+                            gender == "Male" ~ 0,
+                            TRUE ~ NA)) %>% 
+  #AGE
+  mutate(age = case_when(age == "18-24" ~ 0,
+                         age == "25-34" ~ 1,
+                         age == "35-44" ~ 2,
+                         age == "45-54" ~ 3,
+                         age == "55-64" ~ 4,
+                         age == "65+" ~ 5,
+                         TRUE ~ NA)) %>% 
+  #INCOME
+  mutate(inc = case_when(hhincome == "Under $15,000" ~ 0,
+                         hhincome == "Between $15,000 and $29,999" ~ 0,
+                         hhincome == "Between $30,000 and $49,999" ~ 1,
+                         hhincome == "Between $50,000 and $74,999" ~ 1,
+                         hhincome == "Between $75,000 and $99,999" ~ 2,
+                         hhincome == "Between $100,000 and $150,000" ~ 3,
+                         hhincome == "Over $150,000" ~ 3,
+                         TRUE ~ NA)) %>% 
+  #RACE
+  mutate(color = case_when(str_detect(ethnicity.other, "Other|Mixed|Why|
+                                      Chicana|metis|Hispanic|Multiracial|Bi-racial") ~ 1,
+                           TRUE ~ NA)) %>%
+  mutate(color = case_when(!is.na(Caucasian) ~ 0,
+                           TRUE ~ color)) %>% 
+  mutate(color = case_when(!is.na(asian) ~ 1,
+                           !is.na(black.african) ~ 1,
+                           !is.na(hispanic.latinx) ~ 1,
+                           !is.na(native.american) ~ 1,
+                           !is.na(pacific.island) ~ 1,
+                           TRUE ~ color)) %>%
+  #VEHICLE
+  mutate(veh = case_when(hhvehicles == "4 or more" ~ "4",
+                         TRUE ~ hhvehicles)) %>% 
+  #WORKER
+  mutate(worker = case_when(hh.ft.wrkr == "4 or more" ~ "4",
+                         TRUE ~ hh.ft.wrkr))
+
+```
+
+
+## Trip Characteristics
+
+```{r}
+data <- data %>%
+  #TIME
+  mutate(time = case_when(time.visit == "Morning and evening" ~ 0,
+                          time.visit == "Morning only" ~ 1,
+                          time.visit == "During the day" ~ 2,
+                          time.visit == "Evening only" ~ 3,
+                          time.visit == "Weekends and/or holidays" ~ 4,
+                          TRUE ~ NA)) %>% 
+  #COMPANY
+  mutate(company = case_when(!is.na(who.with) ~ 1,
+                             TRUE ~ NA)) %>% 
+  mutate(company = case_when(who.with == "I'm always alone." ~ 0,
+                             TRUE ~ company)) %>% 
+  #TRIP START
+  mutate(start = case_when(is.na(tripstart) ~ NA,
+                           TRUE ~ -3)) %>% 
+  mutate(start = case_when(str_detect(tripstart, "Davis") ~ 0,
+                           str_detect(tripstart, "Yolo") ~ 1,
+                           str_detect(tripstart, "Solano") ~ 2,
+                           str_detect(tripstart, "Sacramento") ~ -1,
+                           str_detect(tripstart, "Bay") ~ 3,
+                           str_detect(tripstart, "Placer") ~ -2,
+                           str_detect(tripstart, "Other") ~ -3,
+                           TRUE ~ start)) %>% 
+  #TRIP END
+  mutate(end   = case_when(is.na(tripend) ~ NA,
+                           TRUE ~ -3)) %>% 
+  mutate(end   = case_when(str_detect(tripend, "Davis") ~ 0,
+                           str_detect(tripend, "Yolo") ~ 1,
+                           str_detect(tripend, "Solano") ~ 2,
+                           str_detect(tripend, "Sacramento") ~ -1,
+                           str_detect(tripend, "Bay") ~ 3,
+                           str_detect(tripend, "Placer") ~ -2,
+                           str_detect(tripend, "Other") ~ -3,
+                           TRUE ~ end)) %>%
+  #ACCESS MODE
+  mutate(access = case_when(access.mode == "I drive alone" ~ 0,
+                            access.mode == "I drive with others" ~ 1,
+                            access.mode == "I get picked up/dropped off by a friend or family member" ~ 2,
+                            access.mode == "I get picked up/dropped off by a taxi/Uber/Lyft" ~ 3,
+                            access.mode == "I transfer to/from another transit service" ~ 4,
+                            access.mode == "I bike" ~ 5,
+                            access.mode == "I walk" ~ 6))
+
+                            
+```
+
+## Mode Availability 
+
+```{r}
+data <- data %>%
+  mutate(av_drive   = case_when(veh == "0" ~ 0,
+                                TRUE ~ 1),
+         av_pool    = case_when(access  == "1" ~ 1,
+                                TRUE ~ av_drive),
+         av_pickup  = case_when(access == "2" ~ 1,
+                                TRUE ~ av_drive),
+         av_taxi    = case_when(access == "3" ~ 1,
+                                zip=="95616" ~ 1,
+                                TRUE ~ 0),
+         av_transit = case_when(access == "4" ~ 1,
+                                start=="0" ~ 1,
+                                end=="0" ~ 1,
+                                zip=="95616" ~ 1,
+                                zip=="95618" ~ 1,
+                                start=="-3" ~ 0,
+                                TRUE ~ 0),
+         av_bike    = case_when(access=="5" ~ 1,
+                             start=="0" ~ 1,
+                             end=="0" ~ 1,
+                             zip=="95616" ~ 1,
+                             zip=="95618" ~ 1,
+                             TRUE ~ 0),
+         av_walk = case_when(access=="6" ~ 1,
+                             start=="0" ~ 1,
+                             end=="0" ~ 1,
+                             zip=="95616" ~ 1,
+                             TRUE ~ 0))
+```
+
+
+
+\newpage
+
+# New Data Frame
+
+```{r}
+# selecting only variables of interest
+datax <- data %>% 
+  select(c("respid", "freq", "female", 
+           "age", "inc", "color", "veh", "worker",
+           "time", "company", "access", 
+           "av_drive", "av_pool", "av_pickup", "av_taxi",
+           "av_transit", "av_bike", "av_walk"))
+ 
+# checking columns' class
+sapply(datax, class) # class needs to be numeric for imputation
+
+# convert all non-numeric to numeric values
+is_all_numeric <- function(datax) {
+  !any(is.na(suppressWarnings(as.numeric(na.omit(datax))))) & is.character(datax)
+}
+datax <- datax %>% 
+  mutate_if(is_all_numeric, as.numeric)
+
+# checking columns' class
+sapply(datax, class) # class needs to be numeric for imputation
+
+# checking empty cells
+# datax$av_taxi <- complete(mice(datax, method = "cart"))$av_taxi
+md.pattern(datax)
+```
+
+There 452/690 observations which have complete cells.
+
+## Base 
+
+Here I omit all blank cells (NA values) from all columns, leaving 452 observations. 
+
+```{r}
+data_complete <- na.omit(datax)
+md.pattern(data_complete)
+```
+
+
+
+# Alternate-Specific Coding
+
+```{r}
+# Complete Dataset
+data_complete <- data_complete %>%
+mutate(age_18_24 = case_when(age == 0 ~ 1,
+                             TRUE ~ 0),
+       age_25_34 = case_when(age == 1 ~ 1,
+                             TRUE ~ 0),
+       age_35_44 = case_when(age == 2 ~ 1,
+                             TRUE ~ 0),
+       age_45_54 = case_when(age == 3 ~ 1,
+                             TRUE ~ 0),
+       age_55_64 = case_when(age == 4 ~ 1,
+                             TRUE ~ 0),
+       age_65 = case_when(age == 5 ~ 1,
+                             TRUE ~ 0)) %>%
+mutate(inc_under30k = case_when(inc == 0 ~ 1,
+                                TRUE ~ 0),
+       inc_30k_75k  = case_when(inc == 1 ~ 1,
+                                TRUE ~ 0),
+       inc_75k_100k = case_when(inc == 2 ~ 1,
+                                TRUE ~ 0),
+       inc_over100k = case_when(inc == 3 ~ 1,
+                                TRUE ~ 0)) %>%
+mutate(time_mor_eve = case_when(time == 0 ~ 1,
+                                TRUE ~ 0),
+       time_once    = case_when(time == 1 ~ 1,
+                                time == 2 ~ 1,
+                                time == 3 ~ 1,
+                                TRUE ~ 0),
+       time_weekend = case_when(time == 4 ~ 1,
+                                TRUE ~ 0)) %>% 
+mutate(freq_month  = case_when(freq == 1 ~ 1,
+                               TRUE ~ 0),
+       freq_week   = case_when(freq == 2 ~ 1,
+                               TRUE ~ 0),
+       freq_24days = case_when(freq == 3 ~ 1,
+                               TRUE ~ 0),
+       freq_57days = case_when(freq == 4 ~ 1,
+                               TRUE ~ 0))
+   
+```
+
+# Statisfaction and Support
+
+```{r}
+data_opinion <- data %>% 
+  mutate(safety.satisfied = case_when(safety.satisfied == "Very Dissatisfied" ~ 1,
+                                      safety.satisfied == "Dissatisfied" ~ 2,
+                                      safety.satisfied == "Neutral" ~ 3,
+                                      safety.satisfied == "Satisfied" ~ 4,
+                                      safety.satisfied == "Very Satisfied" ~ 5,
+                                      TRUE ~ NA),
+         bike.satisfied   = case_when(bike.satisfied == "Very Dissatisfied" ~ 1,
+                                      bike.satisfied == "Dissatisfied" ~ 2,
+                                      bike.satisfied == "Neutral" ~ 3,
+                                      bike.satisfied == "Satisfied" ~ 4,
+                                      bike.satisfied == "Very Satisfied" ~ 5,
+                                      TRUE ~ NA),
+         walk.satisfied   = case_when(walk.satisfied == "Very Dissatisfied" ~ 1,
+                                      walk.satisfied == "Dissatisfied" ~ 2,
+                                      walk.satisfied == "Neutral" ~ 3,
+                                      walk.satisfied == "Satisfied" ~ 4,
+                                      walk.satisfied == "Very Satisfied" ~ 5,
+                                      TRUE ~ NA),
+         transit.satisfied= case_when(transit.satisfied == "Very Dissatisfied" ~ 1,
+                                      transit.satisfied == "Dissatisfied" ~ 2,
+                                      transit.satisfied == "Neutral" ~ 3,
+                                      transit.satisfied == "Satisfied" ~ 4,
+                                      transit.satisfied == "Very Satisfied" ~ 5,
+                                      TRUE ~ NA),
+         driving.satisfied= case_when(driving.satisfied == "Very Dissatisfied" ~ 1,
+                                      driving.satisfied == "Dissatisfied" ~ 2,
+                                      driving.satisfied == "Neutral" ~ 3,
+                                      driving.satisfied == "Satisfied" ~ 4,
+                                      driving.satisfied == "Very Satisfied" ~ 5,
+                                      TRUE ~ NA),
+         parking.satisfied= case_when(parking.satisfied == "Very Dissatisfied" ~ 1,
+                                      parking.satisfied == "Dissatisfied" ~ 2,
+                                      parking.satisfied == "Neutral" ~ 3,
+                                      parking.satisfied == "Satisfied" ~ 4,
+                                      parking.satisfied == "Very Satisfied" ~ 5,
+                                      TRUE ~ NA),
+         bus.support = case_when(bus.support == "Strongly oppose" ~ 1,
+                                      bus.support == "Oppose" ~ 2,
+                                      bus.support == "Neutral" ~ 3,
+                                      bus.support == "Support" ~ 4,
+                                      bus.support == "Strongly support" ~ 5,
+                                      TRUE ~ NA),
+         pedestrian.support = case_when(pedestrian.support == "Strongly oppose" ~ 1,
+                                      pedestrian.support == "Oppose" ~ 2,
+                                      pedestrian.support == "Neutral" ~ 3,
+                                      pedestrian.support == "Support" ~ 4,
+                                      pedestrian.support == "Strongly support" ~ 5,
+                                      TRUE ~ NA),
+         dropoff.support = case_when(dropoff.support == "Strongly oppose" ~ 1,
+                                      dropoff.support == "Oppose" ~ 2,
+                                      dropoff.support == "Neutral" ~ 3,
+                                      dropoff.support == "Support" ~ 4,
+                                      dropoff.support == "Strongly support" ~ 5,
+                                      TRUE ~ NA),
+         bikepark.support = case_when(bikepark.support == "Strongly oppose" ~ 1,
+                                      bikepark.support == "Oppose" ~ 2,
+                                      bikepark.support == "Neutral" ~ 3,
+                                      bikepark.support == "Support" ~ 4,
+                                      bikepark.support == "Strongly support" ~ 5,
+                                      TRUE ~ NA),
+         carpark.support = case_when(carpark.support == "Strongly oppose" ~ 1,
+                                      carpark.support == "Oppose" ~ 2,
+                                      carpark.support == "Neutral" ~ 3,
+                                      carpark.support == "Support" ~ 4,
+                                      carpark.support == "Strongly support" ~ 5,
+                                      TRUE ~ NA),
+         bikevalet.support = case_when(bikevalet.support == "Strongly oppose" ~ 1,
+                                      bikevalet.support == "Oppose" ~ 2,
+                                      bikevalet.support == "Neutral" ~ 3,
+                                      bikevalet.support == "Support" ~ 4,
+                                      bikevalet.support == "Strongly support" ~ 5,
+                                      TRUE ~ NA),
+         indoorbike.support = case_when(indoorbike.support == "Strongly oppose" ~ 1,
+                                      indoorbike.support == "Oppose" ~ 2,
+                                      indoorbike.support == "Neutral" ~ 3,
+                                      indoorbike.support == "Support" ~ 4,
+                                      indoorbike.support == "Strongly support" ~ 5,
+                                      TRUE ~ NA)) %>% 
+  select(c("respid","safety.satisfied","bike.satisfied","walk.satisfied","driving.satisfied","parking.satisfied","pedestrian.support","dropoff.support","bikepark.support","carpark.support"))
+
+```
+
+## Merging opinion to main dataset
+
+```{r}
+data_opinion <- left_join(data_complete, data_opinion, by="respid")
+md.pattern(data_opinion)
+
+op_sat_safety <-  data_opinion %>% 
+  select(-c("safety.satisfied","bike.satisfied","walk.satisfied","carpark.support","parking.satisfied","pedestrian.support","dropoff.support","bikepark.support")) %>% 
+  na.omit(data_opinion$driving.satisfied)
+md.pattern(op_sat_safety)
+chisq.test(op_sat_safety$female, op_sat_safety$driving.satisfied )
+
+```
+
+# Preventative factors
+
+```{r}
+data_prevent <- data %>% 
+  mutate(bike.facilities.1 = case_when(bike.facilities == "First reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.facilities.2 = case_when(bike.facilities == "Second reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.facilities.3 = case_when(bike.facilities == "Third reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.facilities   = case_when(!is.na(bike.facilities) ~ 1,
+                                      TRUE ~ 0),
+         bike.far.1 = case_when(bike.far == "First reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.far.2 = case_when(bike.far == "Second reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.far.3 = case_when(bike.far == "Third reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.far   = case_when(!is.na(bike.far) ~ 1,
+                                      TRUE ~ 0),
+         bike.notown.1 = case_when(bike.notown == "First reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.notown.2 = case_when(bike.notown == "Second reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.notown.3 = case_when(bike.notown == "Third reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.notown   = case_when(!is.na(bike.notown) ~ 1,
+                                      TRUE ~ 0),
+         bike.network.1 = case_when(bike.network == "First reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.network.2 = case_when(bike.network == "Second reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.network.3 = case_when(bike.network == "Third reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.network   = case_when(!is.na(bike.network) ~ 1,
+                                      TRUE ~ 0),
+         bike.safety.1 = case_when(bike.safety == "First reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.safety.2 = case_when(bike.safety == "Second reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.safety.3 = case_when(bike.safety == "Third reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.safety   = case_when(!is.na(bike.safety) ~ 1,
+                                      TRUE ~ 0),
+         bike.ability.1 = case_when(bike.ability == "First reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.ability.2 = case_when(bike.ability == "Second reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.ability.3 = case_when(bike.ability == "Third reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.ability   = case_when(!is.na(bike.ability) ~ 1,
+                                      TRUE ~ 0),
+         bike.weather.1 = case_when(bike.weather == "First reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.weather.2 = case_when(bike.weather == "Second reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.weather.3 = case_when(bike.weather == "Third reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.weather   = case_when(!is.na(bike.weather) ~ 1,
+                                      TRUE ~ 0),
+         bike.amenities.1 = case_when(bike.amenities == "First reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.amenities.2 = case_when(bike.amenities == "Second reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.amenities.3 = case_when(bike.amenities == "Third reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.amenities   = case_when(!is.na(bike.amenities) ~ 1,
+                                      TRUE ~ 0),
+         bike.issues.1 = case_when(bike.issues == "First reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.issues.2 = case_when(bike.issues == "Second reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.issues.3 = case_when(bike.issues == "Third reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.issues   = case_when(!is.na(bike.issues) ~ 1,
+                                      TRUE ~ 0),
+         bike.never.1 = case_when(bike.never == "First reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.never.2 = case_when(bike.never == "Second reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.never.3 = case_when(bike.never == "Third reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.never   = case_when(!is.na(bike.never) ~ 1,
+                                      TRUE ~ 0),
+         bike.parking.1 = case_when(bike.parking == "First reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.parking.2 = case_when(bike.parking == "Second reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.parking.3 = case_when(bike.parking == "Third reason" ~ 1,
+                                      TRUE ~ 0),
+         bike.parking   = case_when(!is.na(bike.parking) ~ 1,
+                                      TRUE ~ 0))%>% 
+  select(c("respid","bike.facilities.1","bike.facilities.2","bike.facilities.3","bike.facilities","bike.far.1","bike.far.2","bike.far.3","bike.far","bike.notown.1","bike.notown.2","bike.notown.3","bike.notown","bike.network.1","bike.network.2","bike.network.3","bike.network","bike.safety.1","bike.safety.2","bike.safety.3","bike.safety","bike.ability.1","bike.ability.2","bike.ability.3","bike.ability","bike.weather.1","bike.weather.2","bike.weather.3","bike.weather","bike.amenities.1","bike.amenities.2","bike.amenities.3","bike.amenities","bike.issues.1","bike.issues.2","bike.issues.3","bike.issues","bike.never.1","bike.never.2","bike.never.3","bike.never","bike.parking.1","bike.parking.2","bike.parking.3","bike.parking"))
+```
+
+## Merging preventative factors to main dataset
+
+```{r}
+data_prevent <- left_join(data_complete, data_prevent, by="respid")
+md.pattern(data_opinion)
+```
+
+```{r}
+chisq.test(data_prevent$female, data_prevent$bike.safety)   #significant
+chisq.test(data_prevent$female, data_prevent$bike.safety.1)
+chisq.test(data_prevent$female, data_prevent$bike.safety.2) #significant
+chisq.test(data_prevent$female, data_prevent$bike.safety.3)
+
+chisq.test(data_prevent$female, data_prevent$bike.facilities)   
+chisq.test(data_prevent$female, data_prevent$bike.facilities.1)
+chisq.test(data_prevent$female, data_prevent$bike.facilities.2) 
+chisq.test(data_prevent$female, data_prevent$bike.facilities.3)
+
+chisq.test(data_prevent$female, data_prevent$bike.far)   
+chisq.test(data_prevent$female, data_prevent$bike.far.1)
+chisq.test(data_prevent$female, data_prevent$bike.far.2) 
+chisq.test(data_prevent$female, data_prevent$bike.far.3)
+
+chisq.test(data_prevent$female, data_prevent$bike.network)   
+chisq.test(data_prevent$female, data_prevent$bike.network.1)
+chisq.test(data_prevent$female, data_prevent$bike.network.2) 
+chisq.test(data_prevent$female, data_prevent$bike.network.3)
+
+chisq.test(data_prevent$female, data_prevent$bike.notown)   
+chisq.test(data_prevent$female, data_prevent$bike.notown.1)
+chisq.test(data_prevent$female, data_prevent$bike.notown.2) 
+chisq.test(data_prevent$female, data_prevent$bike.notown.3)
+
+chisq.test(data_prevent$female, data_prevent$bike.ability)   
+chisq.test(data_prevent$female, data_prevent$bike.ability.1)
+chisq.test(data_prevent$female, data_prevent$bike.ability.2) 
+chisq.test(data_prevent$female, data_prevent$bike.ability.3)
+
+chisq.test(data_prevent$female, data_prevent$bike.weather)   
+chisq.test(data_prevent$female, data_prevent$bike.weather.1)
+chisq.test(data_prevent$female, data_prevent$bike.weather.2) 
+chisq.test(data_prevent$female, data_prevent$bike.weather.3)
+
+chisq.test(data_prevent$female, data_prevent$bike.amenities)   
+chisq.test(data_prevent$female, data_prevent$bike.amenities.1)
+chisq.test(data_prevent$female, data_prevent$bike.amenities.2) 
+chisq.test(data_prevent$female, data_prevent$bike.amenities.3)
+
+chisq.test(data_prevent$female, data_prevent$bike.issues)   
+chisq.test(data_prevent$female, data_prevent$bike.issues.1)
+chisq.test(data_prevent$female, data_prevent$bike.issues.2) 
+chisq.test(data_prevent$female, data_prevent$bike.issues.3)
+
+chisq.test(data_prevent$female, data_prevent$bike.never)   
+chisq.test(data_prevent$female, data_prevent$bike.never.1)
+chisq.test(data_prevent$female, data_prevent$bike.never.2) 
+chisq.test(data_prevent$female, data_prevent$bike.never.3)
+
+chisq.test(data_prevent$female, data_prevent$bike.parking)   #significant   
+chisq.test(data_prevent$female, data_prevent$bike.parking.1)
+chisq.test(data_prevent$female, data_prevent$bike.parking.2) 
+chisq.test(data_prevent$female, data_prevent$bike.parking.3) #significant
+
+```
+
+
+# Exporting database for modeling
+
+```{r}
+# complete dataset (N=452)
+write.csv(data_complete, "C:\\Users\\Benny Panjaitan\\Documents\\MS TTP UC Davis\\5_FALL_23\\Gender & Amtrak\\Amtrak\\amtrak_actual.csv", row.names=FALSE)
+
+# female dataset (N=240)
+# data_complete %>% filter(female == 1) %>%
+# write.csv("C:\\Users\\Benny Panjaitan\\Documents\\MS TTP UC Davis\\5_FALL_23\\Gender & Amtrak\\Amtrak\\amtrak_female.csv", row.names=FALSE)
+
+# male dataset (N=212)
+# data_complete %>% filter(female == 0) %>%
+# write.csv("C:\\Users\\Benny Panjaitan\\Documents\\MS TTP UC Davis\\5_FALL_23\\Gender & Amtrak\\Amtrak\\amtrak_male.csv", row.names=FALSE)
+
+# opinion dataset (N=364)
+# write.csv(data_opinion, "C:\\Users\\Benny Panjaitan\\Documents\\MS TTP UC Davis\\5_FALL_23\\Gender & Amtrak\\Amtrak\\amtrak_opinion.csv", row.names=FALSE)
+
+# preventative dataset (N=364)
+# write.csv(data_prevent, "C:\\Users\\Benny Panjaitan\\Documents\\MS TTP UC Davis\\5_FALL_23\\Gender & Amtrak\\Amtrak\\amtrak_prevent.csv", row.names=FALSE)
+```
+
+
+
+\newpage
+
+# Descriptive Statistics
+
+```{r}
+# preparing the data frame for descriptive statistics
+
+desc_cmp <- data_complete %>% 
+  #FREQUENCY
+  mutate(Frequency = case_when(freq == 1 ~ "Once a month",
+                               freq == 2 ~ "Once a week",
+                               freq == 3 ~ "2-4 days a week",
+                               freq == 4 ~ "5+ days a week",
+                               TRUE ~ NA)) %>% 
+  #GENDER
+  mutate(Gender = case_when(female == 1 ~ "Female",
+                            female == 0 ~ "Male",
+                            TRUE ~ NA)) %>% 
+  #AGE
+  mutate(Age = case_when(age == 0 ~ "18-24",
+                         age == 1 ~ "25-34",
+                         age == 2 ~ "35-44",
+                         age == 3 ~ "45-54",
+                         age == 4 ~ "55-64",
+                         age == 5 ~ "65+",
+                         TRUE ~ NA)) %>% 
+  #INCOME
+  mutate(Income = case_when(inc == 0 ~ "Under $30,000",
+                            inc == 1 ~ "$30,000 - $74,999",
+                            inc == 2 ~ "$75,000 - $100,000",
+                            inc == 3 ~ "Over $100,000",
+                            TRUE ~ NA)) %>% 
+  #RACE
+  mutate(Race = case_when(color == 0 ~ "White",
+                          color == 1 ~ "Color",
+                          TRUE ~ NA)) %>%
+  #TIME
+  mutate(Time = case_when(time == 0 ~ "Morning and evening",
+                          time == 1 ~ "Morning only",
+                          time == 2 ~ "During the day",
+                          time == 3 ~ "Evening only",
+                          time == 4 ~ "Weekends or holidays",
+                          TRUE ~ NA)) %>% 
+  #COMPANY
+  mutate(Company = case_when(company == 0 ~ "Alone",
+                             company == 1 ~ "With Others",
+                             TRUE ~ NA)) %>%
+  #ACCESS MODE
+  mutate(Access = case_when(access == 0 ~ "I drive alone",
+                            access == 1 ~ "I drive with others",
+                            access == 2 ~ "I get picked up/dropped off by a friend/family",
+                            access == 3 ~ "I get picked up/dropped off by a taxi/Uber/Lyft",
+                            access == 4 ~ "I transfer to/from another transit service",
+                            access == 5 ~ "I bike",
+                            access == 6 ~ "I walk"))
+
+```
+
+
+## Income
+
+Income distribution in the original dataset (N=1175)
+
+```{r}
+grid.arrange(
+  (data19 %>% 
+  mutate(inc = case_when(hhincome == "Under $15,000" ~ 0,
+                         hhincome == "Between $15,000 and $29,999" ~ 1,
+                         hhincome == "Between $30,000 and $49,999" ~ 2,
+                         hhincome == "Between $50,000 and $74,999" ~ 3,
+                         hhincome == "Between $75,000 and $99,999" ~ 4,
+                         hhincome == "Between $100,000 and $150,000" ~ 5,
+                         hhincome == "Over $150,000" ~ 6,
+                         TRUE ~ NA)) %>% 
+  filter(!is.na(access.train)) %>% 
+  ggplot(aes(x=inc)) + geom_histogram()),
+  (data19 %>% 
+  mutate(inc = case_when(hhincome == "Under $15,000" ~ 0,
+                         hhincome == "Between $15,000 and $29,999" ~ 1,
+                         hhincome == "Between $30,000 and $49,999" ~ 2,
+                         hhincome == "Between $50,000 and $74,999" ~ 3,
+                         hhincome == "Between $75,000 and $99,999" ~ 4,
+                         hhincome == "Between $100,000 and $150,000" ~ 5,
+                         hhincome == "Over $150,000" ~ 6,
+                         TRUE ~ NA)) %>% 
+  filter(!is.na(access.train)) %>% 
+  filter(!is.na(access.mode)) %>% 
+  ggplot(aes(x=inc)) + geom_histogram()),
+  ncol=2)
+```
+
+
+## Riding freq
+
+```{r}
+desc_cmp$Frequency = factor(desc_cmp$Frequency,
+                            levels = c("5+ days a week",
+                                       "2-4 days a week",
+                                       "Once a week",
+                                       "Once a month"))
+desc_cmp %>%
+  ggplot(aes(x=Gender, fill=Frequency)) +
+  geom_bar(position="fill") + ggtitle("The Frequency of Riding Train (N=452)") +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10))
+```
+
+
+### Riding freq by age
+
+```{r}
+desc_cmp %>%
+  ggplot(aes(x=Gender, fill=Frequency)) +
+  geom_bar(position="fill") + ggtitle("The Frequency of Riding Train by Age (N=452)") +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) +
+  facet_wrap(~Age)
+```
+
+
+
+## Access mode
+
+```{r}
+desc_cmp %>%
+  ggplot(aes(x=Gender, fill=Access)) +
+  geom_bar(position="fill") + ggtitle("Access Mode (N=452)") +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10))
+```
+
+### Access mode by age
+
+```{r}
+desc_cmp %>%
+  ggplot(aes(x=Gender, fill=Access)) +
+  geom_bar(position="fill") + ggtitle("Access Mode by Age Group (N=452)") +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) +
+  facet_wrap(~Age)
+```
+
+### Access mode by time of the day
+
+```{r}
+desc_cmp$Time = factor(desc_cmp$Time,
+                            levels = c("Morning only",
+                                       "During the day",
+                                       "Evening only",
+                                       "Morning and evening",
+                                       "Weekends or holidays"))
+
+desc_cmp %>%
+  ggplot(aes(x=Gender, fill=Access)) +
+  geom_bar(position="fill") + ggtitle("Access Mode by time of the day (N=452)") +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) +
+  facet_wrap(~Time)
+```
+
+## Travel companion and time of day
+
+```{r}
+desc_cmp %>%
+  ggplot(aes(x=Gender, fill=Company)) +
+  geom_bar(position="fill") + ggtitle("Travel Companion by Time of the Day (N=452)") +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) +
+  facet_wrap(~Time)
+
+```
+
+## Travel companion and access mode
+
+```{r}
+desc_cmp %>%
+  ggplot(aes(x=Gender, fill=Access)) +
+  geom_bar(position="fill") + ggtitle("Access Mode by time of the day (N=452)") +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) +
+  facet_wrap(~Company)
+```
+
+
+
+
+
