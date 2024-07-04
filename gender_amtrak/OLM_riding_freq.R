@@ -175,5 +175,5 @@ apollo_modelOutput(model)
 #---- FORMATTED OUTPUT (TO FILE, using model name)               ----
 # ----------------------------------------------------------------- #
 
-# apollo_saveOutput(model)
+apollo_saveOutput(model)
 
